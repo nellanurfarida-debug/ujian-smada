@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ujian Online - SMAS Plus Darussalam</title>
+    
+    <!-- Memuat Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Memuat Font Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        /* Menggunakan font Inter sebagai default */
+        body {
+            font-family: 'Inter', sans-serif;
+            /* Mencegah pemilihan teks di seluruh halaman */
+            user-select: none;
+        }
+
+        /* Styling kustom untuk PDF container */
+        #pdf-container iframe {
+            width: 100%;
+            height: calc(100vh - 120px); /* Tinggi penuh dikurangi header */
+        }
+        
+        /* Animasi loading sederhana */
+        .loader {
+            border-top-color: #16a34a; /* Warna hijau SMADA */
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Menyembunyikan elemen scrollbar */
+        body::-webkit-scrollbar {
+            display: none;
+        }
+        body {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 antialiased">
+
+    <!-- Kontainer Aplikasi Utama -->
+    <div id="app" class="min-h-screen">
+
+        <!-- Header Utama -->
+        <header class="bg-white shadow-md sticky top-0 z-50">
+            <div class="container mx-auto px-4 py-3 flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <!-- Logo Placeholder -->
+                    <img src="https://placehold.co/50x50/16a34a/ffffff?text=SMADA" alt="Logo SMAS Plus Darussalam" class="rounded-full">
+                    <div>
+                        <h1 class="font-bold text-green-700 text-lg md:text-xl">SMAS Plus Darussalam</h1>
+                        <p class="text-xs md:text-sm text-gray-600">Asesmen Sumatif Akhir Semester Ganjil</p>
+                    </div>
+                </div>
+                <!-- Info Siswa (di Halaman Ujian) -->
+                <div id="student-info-header" class="hidden text-right">
+                    <p id="student-name-header" class="font-semibold text-gray-800"></p>
+                    <p id="student-class-header" class="text-sm text-gray-600"></p>
+                </div>
+                <!-- Timer (di Halaman Ujian) -->
+                <div id="timer-header" class="hidden">
+                    <span class="font-bold text-xl text-red-600 bg-red-100 px-4 py-2 rounded-lg" id="timer-display">90:00</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Konten Utama -->
+        <main class="container mx-auto p-4 md:p-8">
+
+            <!-- 1. Halaman Loading Awal -->
+            <div id="loader-page" class="text-center mt-20">
+                <div class="loader w-12 h-12 rounded-full border-4 border-gray-200 border-t-green-600 mx-auto"></div>
+                <p class="mt-4 text-gray-600 font-semibold">Menghubungkan ke server ujian...</p>
+                <p class="text-sm text-gray-500">Pastikan koneksi internet Anda stabil.</p>
+            </div>
+
+            <!-- 2. Halaman Login Siswa -->
+            <div id="login-page" class="hidden max-w-md mx-auto bg-white p-8 rounded-lg shadow-lg mt-10">
+                <h2 class="text-2xl font-bold text-center text-green-700 mb-6">Login Siswa</h2>
+                <form id="login-form">
+                    <div class="mb-4">
+                        <label for="student-name" class="block text-sm font-medium text-gray-700 mb-1">Nama Lengkap</label>
+                        <input type="text" id="student-name" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="Ketik nama lengkap Anda" required>
+                    </div>
+                    <div class="mb-6">
+                        <label for="student-class" class="block text-sm font-medium text-gray-700 mb-1">Pilih Kelas</label>
+                        <select id="student-class" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" required>
+                            <option value="" disabled selected>-- Pilih Kelas Anda --</option>
+                            <option value="X">Kelas X</option>
+                            <option value="XI">Kelas XI</option>
+                            <option value="XII IBB">Kelas XII IBB</option>
+                            <option value="XII IIS">Kelas XII IIS</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="w-full bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 transition duration-300">
+                        Masuk
+                    </button>
+                </form>
+                <p class="text-xs text-center text-gray-500 mt-4">
+                    <a href="#admin" id="admin-link" class="hover:text-green-600">Masuk sebagai Panitia</a>
+                </p>
+            </div>
+
+            <!-- 3. Halaman Tunggu Siswa -->
+            <div id="waiting-page" class="hidden text-center max-w-lg mx-auto bg-white p-8 rounded-lg shadow-lg mt-10">
+                <h2 class="text-2xl font-bold text-gray-800 mb-2">Halo, <span id="wait-student-name" class="text-green-700"></span>!</h2>
+                <p class="text-gray-600 mb-6">Silakan tunggu panitia memulai ujian. Tombol di bawah ini akan aktif secara otomatis.</p>
+                <button id="start-exam-btn" class="w-full bg-gray-400 text-white font-bold py-3 px-6 rounded-lg cursor-not-allowed" disabled>
+                    <span id="start-btn-text">Ujian Belum Dimulai</span>
+                </button>
+                <p class="text-sm text-gray-500 mt-4">Jangan tutup atau refresh halaman ini.</p>
+            </div>
+
+            <!-- 4. Halaman Ujian Siswa -->
+            <div id="exam-page" class="hidden">
+                <!-- Kontainer PDF akan ada di sini -->
+                <div id="pdf-container" class="bg-white rounded-lg shadow-inner border border-gray-200 overflow-hidden">
+                    <p class="p-10 text-center text-gray-500">Memuat soal ujian...</p>
+                    <!-- Iframe akan dimasukkan oleh JS -->
+                </div>
+            </div>
+
+            <!-- 5. Halaman Admin Login -->
+            <div id="admin-login-page" class="hidden max-w-md mx-auto bg-white p-8 rounded-lg shadow-lg mt-10">
+                <h2 class="text-2xl font-bold text-center text-red-700 mb-6">Login Panitia</h2>
+                <form id="admin-login-form">
+                    <div class="mb-4">
+                        <label for="admin-username" class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                        <input type="text" id="admin-username" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500" required>
+                    </div>
+                    <div class="mb-6">
+                        <label for="admin-password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                        <input type="password" id="admin-password" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500" required>
+                    </div>
+                    <button type="submit" class="w-full bg-red-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-700 transition duration-300">
+                        Login Admin
+                    </button>
+                    <p id="admin-login-error" class="text-red-500 text-sm mt-3 text-center hidden">Username atau password salah.</p>
+                </form>
+                <p class="text-xs text-center text-gray-500 mt-4">
+                    <a href="#" id="student-link" class="hover:text-green-600">Masuk sebagai Siswa</a>
+                </p>
+            </div>
+
+            <!-- 6. Halaman Panel Admin -->
+            <div id="admin-panel-page" class="hidden">
+                <h2 class="text-3xl font-bold text-gray-800 mb-6">Dasbor Panitia Ujian</h2>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- Kolom Kiri: Pengaturan & Kontrol -->
+                    <div class="lg:col-span-2 space-y-6">
+                        <!-- Kontrol Ujian -->
+                        <div class="bg-white p-6 rounded-lg shadow-lg">
+                            <h3 class="text-xl font-semibold mb-4 text-green-700">Kontrol Ujian</h3>
+                            <div class="flex flex-col sm:flex-row gap-4">
+                                <button id="admin-start-exam-btn" class="flex-1 bg-green-600 text-white font-bold py-3 px-5 rounded-lg hover:bg-green-700 transition duration-300">
+                                    MULAI UJIAN UNTUK SEMUA SISWA
+                                </button>
+                                <button id="admin-reset-exam-btn" class="flex-1 bg-yellow-500 text-white font-bold py-3 px-5 rounded-lg hover:bg-yellow-600 transition duration-300">
+                                    RESET UJIAN (KUNCI TOMBOL)
+                                </button>
+                            </div>
+                            <p class="text-sm text-gray-500 mt-3">Status Ujian Saat Ini: 
+                                <span id="exam-status-display" class="font-bold text-gray-900">BELUM DIMULAI</span>
+                            </p>
+                        </div>
+                        
+                        <!-- Pengaturan Ujian -->
+                        <div class="bg-white p-6 rounded-lg shadow-lg">
+                            <h3 class="text-xl font-semibold mb-4 text-gray-800">Pengaturan Ujian</h3>
+                            <form id="config-form" class="space-y-4">
+                                <div>
+                                    <label for="config-duration" class="block text-sm font-medium text-gray-700">Durasi Ujian (menit)</label>
+                                    <input type="number" id="config-duration" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" value="90">
+                                </div>
+                                <hr>
+                                <p class="font-medium text-gray-700">Link Soal PDF Google Drive (Format .../preview)</p>
+                                <div>
+                                    <label for="config-pdf-x" class="block text-sm font-medium text-gray-600">Kelas X</label>
+                                    <input type="url" id="config-pdf-x" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg" placeholder="https://drive.google.com/file/d/ID/preview">
+                                </div>
+                                <div>
+                                    <label for="config-pdf-xi" class="block text-sm font-medium text-gray-600">Kelas XI</label>
+                                    <input type="url" id="config-pdf-xi" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg" placeholder="https://drive.google.com/file/d/ID/preview">
+                                </div>
+                                <div>
+                                    <label for="config-pdf-xii-ibb" class="block text-sm font-medium text-gray-600">Kelas XII IBB</label>
+                                    <input type="url" id="config-pdf-xii-ibb" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg" placeholder="https://drive.google.com/file/d/ID/preview">
+                                </div>
+                                <div>
+                                    <label for="config-pdf-xii-iis" class="block text-sm font-medium text-gray-600">Kelas XII IIS</label>
+                                    <input type="url" id="config-pdf-xii-iis" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg" placeholder="https://drive.google.com/file/d/ID/preview">
+                                </div>
+                                <button type="submit" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition duration-300">
+                                    Simpan Pengaturan
+                                </button>
+                                <p id="config-save-status" class="text-green-600 text-sm text-center"></p>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Kolom Kanan: Daftar Siswa -->
+                    <div class="lg:col-span-1 space-y-6">
+                        <!-- Siswa Login -->
+                        <div class="bg-white p-6 rounded-lg shadow-lg h-80 overflow-y-auto">
+                            <h3 class="text-xl font-semibold mb-4 text-gray-800">Siswa Login (<span id="student-count">0</span>)</h3>
+                            <ul id="student-list" class="space-y-2 text-sm">
+                                <!-- Diisi oleh JS -->
+                            </ul>
+                        </div>
+                        <!-- Siswa Pelanggaran -->
+                        <div class="bg-white p-6 rounded-lg shadow-lg h-80 overflow-y-auto">
+                            <h3 class="text-xl font-semibold mb-4 text-red-700">Siswa Pelanggaran (<span id="cheat-count">0</span>)</h3>
+                            <ul id="cheat-list" class="space-y-2 text-sm">
+                                <!-- Diisi oleh JS -->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 7. Halaman Terkunci (Cheating) -->
+            <div id="locked-page" class="hidden max-w-lg mx-auto bg-white p-8 rounded-lg shadow-lg mt-10 text-center border-4 border-red-500">
+                <h2 class="text-3xl font-bold text-red-700 mb-4">Ujian Dibatalkan!</h2>
+                <p class="text-gray-700 text-lg">Anda telah melakukan pelanggaran aturan ujian (berpindah jendela) lebih dari 2 kali. Ujian Anda otomatis dihentikan.</p>
+                <p class="text-gray-600 mt-4">Silakan hubungi panitia pengawas.</p>
+            </div>
+
+            <!-- 8. Halaman Waktu Habis -->
+            <div id="timeout-page" class="hidden max-w-lg mx-auto bg-white p-8 rounded-lg shadow-lg mt-10 text-center border-4 border-blue-500">
+                <h2 class="text-3xl font-bold text-blue-700 mb-4">Waktu Ujian Telah Berakhir</h2>
+                <p class="text-gray-700 text-lg">Waktu ujian Anda telah habis. Silakan kumpulkan Lembar Jawab Kertas (LJK) Anda kepada pengawas.</p>
+                <p class="text-gray-600 mt-4">Anda bisa menutup halaman ini sekarang.</p>
+            </div>
+        </main>
+
+        <!-- Modal Peringatan -->
+        <div id="alert-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+            <div class="bg-white p-8 rounded-lg shadow-2xl max-w-sm mx-auto text-center">
+                <h3 class="text-2xl font-bold text-yellow-600 mb-4">PERINGATAN!</h3>
+                <p id="alert-message" class="text-gray-700 mb-6"></p>
+                <button id="close-alert-btn" class="bg-yellow-500 text-white font-bold py-2 px-6 rounded-lg hover:bg-yellow-600">
+                    Saya Mengerti
+                </button>
+            </div>
+        </div>
+
+    </div> <!-- Akhir dari #app -->
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        // Import fungsi Firebase yang diperlukan
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            signInAnonymously, 
+            signInWithCustomToken, 
+            onAuthStateChanged 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            doc, 
+            getDoc, 
+            setDoc, 
+            updateDoc, 
+            addDoc, 
+            collection, 
+            onSnapshot,
+            serverTimestamp,
+            setLogLevel
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- KONFIGURASI FIREBASE ---
+        // Variabel global yang disediakan oleh Canvas
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-exam-app';
+        
+        // Inisialisasi Firebase
+        let app, auth, db;
+        let userId = null;
+
+        // Referensi Firestore
+        let configRef, studentsCollectionRef;
+
+        // State Lokal Aplikasi
+        const localState = {
+            name: null,
+            class: null,
+            studentDocId: null,
+            examEndTime: null,
+            timerInterval: null,
+            cheatCount: 0,
+            isLocked: false,
+        };
+
+        // --- ELEMEN UI ---
+        const pages = {
+            loader: document.getElementById('loader-page'),
+            login: document.getElementById('login-page'),
+            waiting: document.getElementById('waiting-page'),
+            exam: document.getElementById('exam-page'),
+            adminLogin: document.getElementById('admin-login-page'),
+            adminPanel: document.getElementById('admin-panel-page'),
+            locked: document.getElementById('locked-page'),
+            timeout: document.getElementById('timeout-page'),
+        };
+        const studentInfoHeader = document.getElementById('student-info-header');
+        const timerHeader = document.getElementById('timer-header');
+
+        // --- FUNGSI UTAMA ---
+
+        /**
+         * Pindah antar halaman
+         */
+        function showPage(pageId) {
+            // Sembunyikan semua halaman
+            Object.values(pages).forEach(page => page.classList.add('hidden'));
+            
+            // Tampilkan header info siswa & timer hanya di halaman ujian
+            if (pageId === 'exam') {
+                studentInfoHeader.classList.remove('hidden');
+                timerHeader.classList.remove('hidden');
+            } else {
+                studentInfoHeader.classList.add('hidden');
+                timerHeader.classList.add('hidden');
+            }
+            
+            // Tampilkan halaman yang diminta
+            if (pages[pageId]) {
+                pages[pageId].classList.remove('hidden');
+            }
+        }
+
+        /**
+         * Menampilkan modal peringatan kustom
+         */
+        function showCustomAlert(message) {
+            document.getElementById('alert-message').textContent = message;
+            document.getElementById('alert-modal').classList.remove('hidden');
+        }
+
+        /**
+         * Inisialisasi Firebase dan Autentikasi
+         */
+        async function initFirebase() {
+            try {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                setLogLevel('Debug'); // Aktifkan log untuk debugging
+
+                // Tentukan referensi koleksi DENGAN appId
+                configRef = doc(db, 'artifacts', appId, 'public/data/examConfig', 'config');
+                studentsCollectionRef = collection(db, 'artifacts', appId, 'public/data', 'students');
+
+                // Listener status autentikasi
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        // Autentikasi berhasil, lanjutkan ke logika aplikasi
+                        handleRouting();
+                    } else {
+                        // Coba login
+                        try {
+                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                                await signInWithCustomToken(auth, __initial_auth_token);
+                            } else {
+                                await signInAnonymously(auth);
+                            }
+                        } catch (authError) {
+                            console.error("Auth Error:", authError);
+                            showPage('loader'); // Tetap di loader jika auth gagal
+                        }
+                    }
+                });
+
+            } catch (e) {
+                console.error("Firebase Init Error:", e);
+                // Tampilkan error jika inisialisasi gagal
+            }
+        }
+        
+        /**
+         * Mengatur halaman mana yang tampil saat memuat
+         */
+        function handleRouting() {
+            // Cek jika hash adalah #admin
+            if (window.location.hash === '#admin') {
+                if (sessionStorage.getItem('isAdmin') === 'true') {
+                    showPage('adminPanel');
+                    loadAdminData();
+                } else {
+                    showPage('adminLogin');
+                }
+            } else {
+                // Cek sesi siswa
+                checkStudentSession();
+            }
+            // Sembunyikan loader utama
+            pages.loader.classList.add('hidden');
+        }
+        
+        /**
+         * Memeriksa sessionStorage untuk melanjutkan sesi siswa
+         */
+        function checkStudentSession() {
+            localState.name = sessionStorage.getItem('studentName');
+            localState.class = sessionStorage.getItem('studentClass');
+            localState.studentDocId = sessionStorage.getItem('studentDocId');
+            localState.cheatCount = parseInt(sessionStorage.getItem('cheatCount') || '0', 10);
+            localState.isLocked = sessionStorage.getItem('isLocked') === 'true';
+            localState.examEndTime = sessionStorage.getItem('examEndTime');
+
+            if (localState.isLocked) {
+                showPage('locked');
+                return;
+            }
+
+            if (localState.examEndTime) {
+                const endTime = parseInt(localState.examEndTime, 10);
+                if (Date.now() > endTime) {
+                    showPage('timeout');
+                } else {
+                    // Lanjutkan ujian
+                    startTimer();
+                    initAntiCheating();
+                    loadExamPDF(localState.class); // Memuat PDF lagi
+                    showPage('exam');
+                }
+                return;
+            }
+
+            if (localState.name && localState.class && localState.studentDocId) {
+                // Siswa sudah login, arahkan ke halaman tunggu
+                document.getElementById('wait-student-name').textContent = localState.name;
+                showPage('waiting');
+                listenForExamStart();
+            } else {
+                // Siswa belum login
+                showPage('login');
+            }
+        }
+
+        // --- LOGIKA SISWA ---
+
+        /**
+         * Menangani login siswa
+         */
+        async function handleStudentLogin(e) {
+            e.preventDefault();
+            const name = document.getElementById('student-name').value.trim();
+            const sClass = document.getElementById('student-class').value;
+
+            if (name && sClass) {
+                localState.name = name;
+                localState.class = sClass;
+
+                try {
+                    // Simpan data siswa ke Firestore
+                    const studentDoc = await addDoc(studentsCollectionRef, {
+                        name: name,
+                        class: sClass,
+                        status: 'waiting', // waiting, started, finished, cheated
+                        cheatCount: 0,
+                        loginTime: serverTimestamp()
+                    });
+                    
+                    localState.studentDocId = studentDoc.id;
+
+                    // Simpan di sessionStorage
+                    sessionStorage.setItem('studentName', name);
+                    sessionStorage.setItem('studentClass', sClass);
+                    sessionStorage.setItem('studentDocId', studentDoc.id);
+                    sessionStorage.setItem('cheatCount', '0');
+                    sessionStorage.setItem('isLocked', 'false');
+
+                    // Update UI & pindah halaman
+                    document.getElementById('wait-student-name').textContent = name;
+                    showPage('waiting');
+                    listenForExamStart();
+
+                } catch (e) {
+                    console.error("Error adding student document: ", e);
+                    showCustomAlert("Gagal menyimpan data siswa. Coba lagi.");
+                }
+            }
+        }
+
+        /**
+         * Mendengarkan (onSnapshot) perubahan status ujian dari admin
+         */
+        function listenForExamStart() {
+            const startBtn = document.getElementById('start-exam-btn');
+            const startBtnText = document.getElementById('start-btn-text');
+            
+            onSnapshot(configRef, (doc) => {
+                if (doc.exists()) {
+                    const config = doc.data();
+                    if (config.examStarted === true) {
+                        startBtn.disabled = false;
+                        startBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
+                        startBtn.classList.add('bg-green-600', 'hover:bg-green-700', 'animate-pulse');
+                        startBtnText.textContent = "MULAI SEKARANG";
+                    } else {
+                        startBtn.disabled = true;
+                        startBtn.classList.add('bg-gray-400', 'cursor-not-allowed');
+                        startBtn.classList.remove('bg-green-600', 'hover:bg-green-700', 'animate-pulse');
+                        startBtnText.textContent = "Ujian Belum Dimulai";
+                    }
+                } else {
+                    // Dokumen config belum dibuat oleh admin
+                    startBtnText.textContent = "Menunggu Pengaturan dari Panitia";
+                }
+            }, (error) => {
+                console.error("Error listening to exam start: ", error);
+            });
+        }
+        
+        /**
+         * Memulai ujian (saat siswa klik 'Mulai Sekarang')
+         */
+        async function startExam() {
+            if (localState.isLocked) {
+                showPage('locked');
+                return;
+            }
+
+            try {
+                // Ambil durasi dari Firestore
+                const docSnap = await getDoc(configRef);
+                let duration = 90; // Default
+                if (docSnap.exists() && docSnap.data().duration) {
+                    duration = parseInt(docSnap.data().duration, 10);
+                }
+
+                // Set waktu berakhir
+                const now = Date.now();
+                const endTime = now + duration * 60 * 1000;
+                localState.examEndTime = endTime;
+                sessionStorage.setItem('examEndTime', endTime.toString());
+
+                // Update status siswa di Firestore
+                const studentDocRef = doc(db, 'artifacts', appId, 'public/data/students', localState.studentDocId);
+                await updateDoc(studentDocRef, { status: 'started' });
+
+                // Muat PDF
+                loadExamPDF(localState.class);
+
+                // Mulai Timer, Anti-Cheating, dan Fullscreen
+                startTimer();
+                initAntiCheating();
+                
+                // Coba masuk mode fullscreen
+                try {
+                    await document.documentElement.requestFullscreen();
+                } catch (e) {
+                    console.warn("Gagal masuk mode fullscreen:", e);
+                }
+
+                showPage('exam');
+
+            } catch (e) {
+                console.error("Gagal memulai ujian:", e);
+                showCustomAlert("Gagal memulai ujian. Coba lagi.");
+            }
+        }
+
+        /**
+         * Memuat PDF berdasarkan kelas siswa
+         */
+        async function loadExamPDF(studentClass) {
+            // Update header info
+            document.getElementById('student-name-header').textContent = localState.name;
+            document.getElementById('student-class-header').textContent = localState.class;
+            
+            try {
+                const docSnap = await getDoc(configRef);
+                if (docSnap.exists() && docSnap.data().pdfLinks) {
+                    const pdfLinks = docSnap.data().pdfLinks;
+                    const pdfUrl = pdfLinks[studentClass] || pdfLinks['X']; // Default ke X jika kelas tidak ditemukan
+                    
+                    if (pdfUrl) {
+                        const container = document.getElementById('pdf-container');
+                        container.innerHTML = `<iframe src="${pdfUrl}"></iframe>`;
+                    } else {
+                        document.getElementById('pdf-container').innerHTML = `<p class="p-10 text-center text-red-500">Link PDF untuk kelas ${studentClass} belum diatur oleh Panitia.</p>`;
+                    }
+                } else {
+                    document.getElementById('pdf-container').innerHTML = `<p class="p-10 text-center text-red-500">Pengaturan ujian belum ditemukan.</p>`;
+                }
+            } catch (e) {
+                console.error("Gagal memuat PDF: ", e);
+            }
+        }
+
+        /**
+         * Memulai timer hitung mundur
+         */
+        function startTimer() {
+            const timerDisplay = document.getElementById('timer-display');
+            
+            if (localState.timerInterval) {
+                clearInterval(localState.timerInterval);
+            }
+
+            function updateTimer() {
+                const now = Date.now();
+                const remaining = localState.examEndTime - now;
+
+                if (remaining <= 0) {
+                    clearInterval(localState.timerInterval);
+                    timerDisplay.textContent = "00:00";
+                    showPage('timeout');
+                    lockExam(false); // Kunci tapi bukan karena cheating
+                    
+                    // Coba keluar dari fullscreen
+                    if (document.fullscreenElement) {
+                        document.exitFullscreen();
+                    }
+                } else {
+                    const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+                    const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
+                    timerDisplay.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                }
+            }
+
+            updateTimer(); // Panggil sekali saat mulai
+            localState.timerInterval = setInterval(updateTimer, 1000);
+        }
+
+        /**
+         * Mengaktifkan fitur anti-cheating
+         */
+        function initAntiCheating() {
+            // 1. Deteksi pindah tab/jendela
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden && !localState.isLocked && localState.examEndTime > Date.now()) {
+                    localState.cheatCount++;
+                    sessionStorage.setItem('cheatCount', localState.cheatCount.toString());
+                    
+                    // Update ke Firestore
+                    const studentDocRef = doc(db, 'artifacts', appId, 'public/data/students', localState.studentDocId);
+                    updateDoc(studentDocRef, { cheatCount: localState.cheatCount }).catch(console.error);
+
+                    if (localState.cheatCount === 1) {
+                        showCustomAlert("PERINGATAN 1!\nJangan berpindah jendela selama ujian berlangsung!");
+                    } else if (localState.cheatCount >= 2) {
+                        showCustomAlert("PERINGATAN AKHIR!\nUjian Anda dibatalkan karena pelanggaran aturan.");
+                        lockExam(true);
+                    }
+                }
+            });
+
+            // 2. Nonaktifkan klik kanan
+            document.addEventListener('contextmenu', e => e.preventDefault());
+
+            // 3. Nonaktifkan shortcut keyboard
+            document.addEventListener('keydown', e => {
+                if (e.key === 'F12' || 
+                    (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) || 
+                    (e.ctrlKey && e.key === 'U') ||
+                    (e.ctrlKey && e.key === 'C') ||
+                    (e.ctrlKey && e.key === 'P')
+                   ) {
+                    e.preventDefault();
+                }
+            });
+        }
+        
+        /**
+         * Mengunci ujian (karena cheat atau waktu habis)
+         */
+        function lockExam(isCheating) {
+            if (localState.isLocked) return; // Sudah terkunci
+            
+            localState.isLocked = true;
+            sessionStorage.setItem('isLocked', 'true');
+            
+            // Hentikan timer
+            if (localState.timerInterval) {
+                clearInterval(localState.timerInterval);
+            }
+            
+            // Keluar dari fullscreen
+            if (document.fullscreenElement) {
+                document.exitFullscreen();
+            }
+
+            // Update status di Firestore
+            const studentDocRef = doc(db, 'artifacts', appId, 'public/data/students', localState.studentDocId);
+            
+            if (isCheating) {
+                showPage('locked');
+                updateDoc(studentDocRef, { status: 'cheated' }).catch(console.error);
+            } else {
+                // Waktu habis
+                showPage('timeout');
+                updateDoc(studentDocRef, { status: 'finished' }).catch(console.error);
+            }
+        }
+
+
+        // --- LOGIKA ADMIN ---
+
+        /**
+         * Menangani login admin
+         */
+        function handleAdminLogin(e) {
+            e.preventDefault();
+            const username = document.getElementById('admin-username').value;
+            const password = document.getElementById('admin-password').value;
+            const errorMsg = document.getElementById('admin-login-error');
+
+            // Kredensial di-hardcode di sisi klien (sesuai permintaan, tapi TIDAK AMAN untuk produksi nyata)
+            if (username === 'admin ujian' && password === 'smadalawang20517826') {
+                sessionStorage.setItem('isAdmin', 'true');
+                showPage('adminPanel');
+                loadAdminData();
+            } else {
+                errorMsg.classList.remove('hidden');
+            }
+        }
+
+        /**
+         * Memuat data untuk panel admin (onSnapshot)
+         */
+        function loadAdminData() {
+            // 1. Listen ke konfigurasi
+            onSnapshot(configRef, (doc) => {
+                if (doc.exists()) {
+                    const config = doc.data();
+                    document.getElementById('config-duration').value = config.duration || 90;
+                    
+                    if (config.pdfLinks) {
+                        document.getElementById('config-pdf-x').value = config.pdfLinks['X'] || '';
+                        document.getElementById('config-pdf-xi').value = config.pdfLinks['XI'] || '';
+                        document.getElementById('config-pdf-xii-ibb').value = config.pdfLinks['XII IBB'] || '';
+                        document.getElementById('config-pdf-xii-iis').value = config.pdfLinks['XII IIS'] || '';
+                    }
+                    
+                    const statusDisplay = document.getElementById('exam-status-display');
+                    if (config.examStarted) {
+                        statusDisplay.textContent = "SEDANG BERLANGSUNG";
+                        statusDisplay.classList.add('text-green-600');
+                        statusDisplay.classList.remove('text-red-600');
+                    } else {
+                        statusDisplay.textContent = "BELUM DIMULAI";
+                        statusDisplay.classList.add('text-red-600');
+                        statusDisplay.classList.remove('text-green-600');
+                    }
+                }
+            }, (error) => console.error("Error loading config:", error));
+
+            // 2. Listen ke daftar siswa
+            onSnapshot(studentsCollectionRef, (snapshot) => {
+                const studentList = document.getElementById('student-list');
+                const cheatList = document.getElementById('cheat-list');
+                
+                studentList.innerHTML = '';
+                cheatList.innerHTML = '';
+                
+                let studentCount = 0;
+                let cheatCount = 0;
+
+                snapshot.docs.forEach(doc => {
+                    const student = doc.data();
+                    studentCount++;
+                    
+                    const li = document.createElement('li');
+                    li.className = 'flex justify-between items-center p-2 bg-gray-50 rounded';
+                    li.innerHTML = `
+                        <span>
+                            <strong class="text-gray-900">${student.name}</strong>
+                            <span class="text-gray-600">(${student.class})</span>
+                        </span>
+                        <span class="text-xs font-medium px-2 py-0.5 rounded ${
+                            student.status === 'started' ? 'bg-green-100 text-green-800' :
+                            student.status === 'waiting' ? 'bg-yellow-100 text-yellow-800' :
+                            student.status === 'cheated' ? 'bg-red-100 text-red-800' :
+                            'bg-blue-100 text-blue-800'
+                        }">${student.status}</span>
+                    `;
+                    studentList.appendChild(li);
+
+                    if (student.cheatCount > 0 || student.status === 'cheated') {
+                        cheatCount++;
+                        const cheatLi = document.createElement('li');
+                        cheatLi.className = 'flex justify-between items-center p-2 bg-red-50 rounded';
+                        cheatLi.innerHTML = `
+                            <span>
+                                <strong class="text-red-900">${student.name}</strong>
+                                <span class="text-gray-600">(${student.class})</span>
+                            </span>
+                            <span class="font-bold text-red-700">${student.cheatCount}x Pelanggaran</span>
+                        `;
+                        cheatList.appendChild(cheatLi);
+                    }
+                });
+
+                document.getElementById('student-count').textContent = studentCount;
+                document.getElementById('cheat-count').textContent = cheatCount;
+
+            }, (error) => console.error("Error loading students:", error));
+        }
+
+        /**
+         * Menyimpan konfigurasi ujian (PDF, durasi)
+         */
+        async function handleSaveConfig(e) {
+            e.preventDefault();
+            const duration = parseInt(document.getElementById('config-duration').value, 10);
+            const pdfLinks = {
+                'X': document.getElementById('config-pdf-x').value,
+                'XI': document.getElementById('config-pdf-xi').value,
+                'XII IBB': document.getElementById('config-pdf-xii-ibb').value,
+                'XII IIS': document.getElementById('config-pdf-xii-iis').value,
+            };
+
+            try {
+                // setDoc dengan { merge: true } akan membuat dokumen jika tidak ada, atau memperbaruinya
+                await setDoc(configRef, {
+                    duration: duration,
+                    pdfLinks: pdfLinks
+                }, { merge: true });
+                
+                const status = document.getElementById('config-save-status');
+                status.textContent = 'Pengaturan berhasil disimpan!';
+                setTimeout(() => status.textContent = '', 3000);
+
+            } catch (e) {
+                console.error("Error saving config: ", e);
+                const status = document.getElementById('config-save-status');
+                status.textContent = 'Gagal menyimpan. Cek konsol.';
+                status.classList.add('text-red-600');
+            }
+        }
+
+        /**
+         * Admin menekan tombol "Mulai Ujian"
+         */
+        async function adminStartExam() {
+            try {
+                await setDoc(configRef, { examStarted: true }, { merge: true });
+            } catch (e) {
+                console.error("Error starting exam: ", e);
+            }
+        }
+
+        /**
+         * Admin menekan tombol "Reset Ujian"
+         */
+        async function adminResetExam() {
+            if (confirm("Anda yakin ingin MERESET status ujian? Ini akan mengunci tombol 'Mulai' di sisi siswa.")) {
+                try {
+                    await setDoc(configRef, { examStarted: false }, { merge: true });
+                    // Pertimbangkan untuk menghapus koleksi siswa di sini jika perlu
+                    // Untuk saat ini, hanya mereset status mulai
+                } catch (e) {
+                    console.error("Error resetting exam: ", e);
+                }
+            }
+        }
+
+        // --- INISIALISASI DAN EVENT LISTENER ---
+
+        // Panggil inisialisasi Firebase saat DOM dimuat
+        document.addEventListener('DOMContentLoaded', () => {
+            initFirebase();
+
+            // Navigasi Admin/Siswa
+            document.getElementById('admin-link').addEventListener('click', (e) => {
+                e.preventDefault();
+                window.location.hash = '#admin';
+                handleRouting();
+            });
+            document.getElementById('student-link').addEventListener('click', (e) => {
+                e.preventDefault();
+                window.location.hash = '';
+                handleRouting();
+            });
+
+            // Listener Form
+            document.getElementById('login-form').addEventListener('submit', handleStudentLogin);
+            document.getElementById('admin-login-form').addEventListener('submit', handleAdminLogin);
+            document.getElementById('config-form').addEventListener('submit', handleSaveConfig);
+
+            // Listener Tombol
+            document.getElementById('start-exam-btn').addEventListener('click', startExam);
+            document.getElementById('admin-start-exam-btn').addEventListener('click', adminStartExam);
+            document.getElementById('admin-reset-exam-btn').addEventListener('click', adminResetExam);
+            document.getElementById('close-alert-btn').addEventListener('click', () => {
+                document.getElementById('alert-modal').classList.add('hidden');
+            });
+        });
+
+    </script>
+</body>
+</html>

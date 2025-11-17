@@ -259,650 +259,662 @@
 
     <!-- Firebase SDK -->
     <script type="module">
-        // Import fungsi Firebase yang diperlukan
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { 
-            getAuth, 
-            signInAnonymously, 
-            signInWithCustomToken, 
-            onAuthStateChanged 
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { 
-            getFirestore, 
-            doc, 
-            getDoc, 
-            setDoc, 
-            updateDoc, 
-            addDoc, 
-            collection, 
-            onSnapshot,
-            serverTimestamp,
-            setLogLevel
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    // Import fungsi Firebase yang diperlukan
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { 
+        getAuth, 
+        signInAnonymously, 
+        signInWithCustomToken, 
+        onAuthStateChanged 
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { 
+        getFirestore, 
+        doc, 
+        getDoc, 
+        setDoc, 
+        updateDoc, 
+        addDoc, 
+        collection, 
+        onSnapshot,
+        serverTimestamp,
+        setLogLevel
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- KONFIGURASI FIREBASE ---
-        // Variabel global yang disediakan oleh Canvas
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-exam-app';
+    // --- KONFIGURASI FIREBASE (DIISI DARI FIREBASE CONSOLE) ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyASohh7-Rz4CyMvJQDeafk0nxqQxKl9__A",
+      authDomain: "sassmadalawang.firebaseapp.com",
+      projectId: "sassmadalawang",
+      storageBucket: "sassmadalawang.firebasestorage.app",
+      messagingSenderId: "963816880248",
+      appId: "1:963816880248:web:0fa0e4f7a6339dfed8558d",
+      measurementId: "G-F2YTRNMGQS"
+    };
+
+    // derive appId if diperlukan (tidak digunakan untuk path sekarang,
+    // tapi berguna jika kamu mau referensi projectId di masa depan)
+    const appId = firebaseConfig.projectId || 'default-exam-app';
+
+    // Inisialisasi Firebase
+    let app, auth, db;
+    let userId = null;
+
+    // Referensi Firestore (DISERDERHANAKAN sesuai pilihan B)
+    // configRef -> examConfig/config
+    // studentsCollectionRef -> students collection di root
+    let configRef, studentsCollectionRef;
+
+    // State Lokal Aplikasi
+    const localState = {
+        name: null,
+        class: null,
+        studentDocId: null,
+        examEndTime: null,
+        timerInterval: null,
+        cheatCount: 0,
+        isLocked: false,
+    };
+
+    // --- ELEMEN UI ---
+    const pages = {
+        loader: document.getElementById('loader-page'),
+        login: document.getElementById('login-page'),
+        waiting: document.getElementById('waiting-page'),
+        exam: document.getElementById('exam-page'),
+        adminLogin: document.getElementById('admin-login-page'),
+        adminPanel: document.getElementById('admin-panel-page'),
+        locked: document.getElementById('locked-page'),
+        timeout: document.getElementById('timeout-page'),
+    };
+    const studentInfoHeader = document.getElementById('student-info-header');
+    const timerHeader = document.getElementById('timer-header');
+
+    // --- FUNGSI UTAMA ---
+
+    /**
+     * Pindah antar halaman
+     */
+    function showPage(pageId) {
+        // Sembunyikan semua halaman
+        Object.values(pages).forEach(page => page.classList.add('hidden'));
         
-        // Inisialisasi Firebase
-        let app, auth, db;
-        let userId = null;
-
-        // Referensi Firestore
-        let configRef, studentsCollectionRef;
-
-        // State Lokal Aplikasi
-        const localState = {
-            name: null,
-            class: null,
-            studentDocId: null,
-            examEndTime: null,
-            timerInterval: null,
-            cheatCount: 0,
-            isLocked: false,
-        };
-
-        // --- ELEMEN UI ---
-        const pages = {
-            loader: document.getElementById('loader-page'),
-            login: document.getElementById('login-page'),
-            waiting: document.getElementById('waiting-page'),
-            exam: document.getElementById('exam-page'),
-            adminLogin: document.getElementById('admin-login-page'),
-            adminPanel: document.getElementById('admin-panel-page'),
-            locked: document.getElementById('locked-page'),
-            timeout: document.getElementById('timeout-page'),
-        };
-        const studentInfoHeader = document.getElementById('student-info-header');
-        const timerHeader = document.getElementById('timer-header');
-
-        // --- FUNGSI UTAMA ---
-
-        /**
-         * Pindah antar halaman
-         */
-        function showPage(pageId) {
-            // Sembunyikan semua halaman
-            Object.values(pages).forEach(page => page.classList.add('hidden'));
-            
-            // Tampilkan header info siswa & timer hanya di halaman ujian
-            if (pageId === 'exam') {
-                studentInfoHeader.classList.remove('hidden');
-                timerHeader.classList.remove('hidden');
-            } else {
-                studentInfoHeader.classList.add('hidden');
-                timerHeader.classList.add('hidden');
-            }
-            
-            // Tampilkan halaman yang diminta
-            if (pages[pageId]) {
-                pages[pageId].classList.remove('hidden');
-            }
+        // Tampilkan header info siswa & timer hanya di halaman ujian
+        if (pageId === 'exam') {
+            studentInfoHeader.classList.remove('hidden');
+            timerHeader.classList.remove('hidden');
+        } else {
+            studentInfoHeader.classList.add('hidden');
+            timerHeader.classList.add('hidden');
         }
-
-        /**
-         * Menampilkan modal peringatan kustom
-         */
-        function showCustomAlert(message) {
-            document.getElementById('alert-message').textContent = message;
-            document.getElementById('alert-modal').classList.remove('hidden');
+        
+        // Tampilkan halaman yang diminta
+        if (pages[pageId]) {
+            pages[pageId].classList.remove('hidden');
         }
+    }
 
-        /**
-         * Inisialisasi Firebase dan Autentikasi
-         */
-        async function initFirebase() {
-            try {
-                app = initializeApp(firebaseConfig);
-                auth = getAuth(app);
-                db = getFirestore(app);
-                setLogLevel('Debug'); // Aktifkan log untuk debugging
+    /**
+     * Menampilkan modal peringatan kustom
+     */
+    function showCustomAlert(message) {
+        document.getElementById('alert-message').textContent = message;
+        document.getElementById('alert-modal').classList.remove('hidden');
+    }
 
-                // Tentukan referensi koleksi DENGAN appId
-                configRef = doc(db, 'artifacts', appId, 'public/data/examConfig', 'config');
-                studentsCollectionRef = collection(db, 'artifacts', appId, 'public/data', 'students');
+    /**
+     * Inisialisasi Firebase dan Autentikasi
+     */
+    async function initFirebase() {
+        try {
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+            setLogLevel('Debug'); // Aktifkan log untuk debugging
 
-                // Listener status autentikasi
-                onAuthStateChanged(auth, async (user) => {
-                    if (user) {
-                        userId = user.uid;
-                        // Autentikasi berhasil, lanjutkan ke logika aplikasi
-                        handleRouting();
-                    } else {
-                        // Coba login
-                        try {
-                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                                await signInWithCustomToken(auth, __initial_auth_token);
-                            } else {
-                                await signInAnonymously(auth);
-                            }
-                        } catch (authError) {
-                            console.error("Auth Error:", authError);
-                            showPage('loader'); // Tetap di loader jika auth gagal
+            // Referensi sederhana
+            configRef = doc(db, 'examConfig', 'config');
+            studentsCollectionRef = collection(db, 'students');
+
+            // Listener status autentikasi
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    userId = user.uid;
+                    // Autentikasi berhasil, lanjutkan ke logika aplikasi
+                    handleRouting();
+                } else {
+                    // Coba login anonymous
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
                         }
-                    }
-                });
-
-            } catch (e) {
-                console.error("Firebase Init Error:", e);
-                // Tampilkan error jika inisialisasi gagal
-            }
-        }
-        
-        /**
-         * Mengatur halaman mana yang tampil saat memuat
-         */
-        function handleRouting() {
-            // Cek jika hash adalah #admin
-            if (window.location.hash === '#admin') {
-                if (sessionStorage.getItem('isAdmin') === 'true') {
-                    showPage('adminPanel');
-                    loadAdminData();
-                } else {
-                    showPage('adminLogin');
-                }
-            } else {
-                // Cek sesi siswa
-                checkStudentSession();
-            }
-            // Sembunyikan loader utama
-            pages.loader.classList.add('hidden');
-        }
-        
-        /**
-         * Memeriksa sessionStorage untuk melanjutkan sesi siswa
-         */
-        function checkStudentSession() {
-            localState.name = sessionStorage.getItem('studentName');
-            localState.class = sessionStorage.getItem('studentClass');
-            localState.studentDocId = sessionStorage.getItem('studentDocId');
-            localState.cheatCount = parseInt(sessionStorage.getItem('cheatCount') || '0', 10);
-            localState.isLocked = sessionStorage.getItem('isLocked') === 'true';
-            localState.examEndTime = sessionStorage.getItem('examEndTime');
-
-            if (localState.isLocked) {
-                showPage('locked');
-                return;
-            }
-
-            if (localState.examEndTime) {
-                const endTime = parseInt(localState.examEndTime, 10);
-                if (Date.now() > endTime) {
-                    showPage('timeout');
-                } else {
-                    // Lanjutkan ujian
-                    startTimer();
-                    initAntiCheating();
-                    loadExamPDF(localState.class); // Memuat PDF lagi
-                    showPage('exam');
-                }
-                return;
-            }
-
-            if (localState.name && localState.class && localState.studentDocId) {
-                // Siswa sudah login, arahkan ke halaman tunggu
-                document.getElementById('wait-student-name').textContent = localState.name;
-                showPage('waiting');
-                listenForExamStart();
-            } else {
-                // Siswa belum login
-                showPage('login');
-            }
-        }
-
-        // --- LOGIKA SISWA ---
-
-        /**
-         * Menangani login siswa
-         */
-        async function handleStudentLogin(e) {
-            e.preventDefault();
-            const name = document.getElementById('student-name').value.trim();
-            const sClass = document.getElementById('student-class').value;
-
-            if (name && sClass) {
-                localState.name = name;
-                localState.class = sClass;
-
-                try {
-                    // Simpan data siswa ke Firestore
-                    const studentDoc = await addDoc(studentsCollectionRef, {
-                        name: name,
-                        class: sClass,
-                        status: 'waiting', // waiting, started, finished, cheated
-                        cheatCount: 0,
-                        loginTime: serverTimestamp()
-                    });
-                    
-                    localState.studentDocId = studentDoc.id;
-
-                    // Simpan di sessionStorage
-                    sessionStorage.setItem('studentName', name);
-                    sessionStorage.setItem('studentClass', sClass);
-                    sessionStorage.setItem('studentDocId', studentDoc.id);
-                    sessionStorage.setItem('cheatCount', '0');
-                    sessionStorage.setItem('isLocked', 'false');
-
-                    // Update UI & pindah halaman
-                    document.getElementById('wait-student-name').textContent = name;
-                    showPage('waiting');
-                    listenForExamStart();
-
-                } catch (e) {
-                    console.error("Error adding student document: ", e);
-                    showCustomAlert("Gagal menyimpan data siswa. Coba lagi.");
-                }
-            }
-        }
-
-        /**
-         * Mendengarkan (onSnapshot) perubahan status ujian dari admin
-         */
-        function listenForExamStart() {
-            const startBtn = document.getElementById('start-exam-btn');
-            const startBtnText = document.getElementById('start-btn-text');
-            
-            onSnapshot(configRef, (doc) => {
-                if (doc.exists()) {
-                    const config = doc.data();
-                    if (config.examStarted === true) {
-                        startBtn.disabled = false;
-                        startBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
-                        startBtn.classList.add('bg-green-600', 'hover:bg-green-700', 'animate-pulse');
-                        startBtnText.textContent = "MULAI SEKARANG";
-                    } else {
-                        startBtn.disabled = true;
-                        startBtn.classList.add('bg-gray-400', 'cursor-not-allowed');
-                        startBtn.classList.remove('bg-green-600', 'hover:bg-green-700', 'animate-pulse');
-                        startBtnText.textContent = "Ujian Belum Dimulai";
-                    }
-                } else {
-                    // Dokumen config belum dibuat oleh admin
-                    startBtnText.textContent = "Menunggu Pengaturan dari Panitia";
-                }
-            }, (error) => {
-                console.error("Error listening to exam start: ", error);
-            });
-        }
-        
-        /**
-         * Memulai ujian (saat siswa klik 'Mulai Sekarang')
-         */
-        async function startExam() {
-            if (localState.isLocked) {
-                showPage('locked');
-                return;
-            }
-
-            try {
-                // Ambil durasi dari Firestore
-                const docSnap = await getDoc(configRef);
-                let duration = 90; // Default
-                if (docSnap.exists() && docSnap.data().duration) {
-                    duration = parseInt(docSnap.data().duration, 10);
-                }
-
-                // Set waktu berakhir
-                const now = Date.now();
-                const endTime = now + duration * 60 * 1000;
-                localState.examEndTime = endTime;
-                sessionStorage.setItem('examEndTime', endTime.toString());
-
-                // Update status siswa di Firestore
-                const studentDocRef = doc(db, 'artifacts', appId, 'public/data/students', localState.studentDocId);
-                await updateDoc(studentDocRef, { status: 'started' });
-
-                // Muat PDF
-                loadExamPDF(localState.class);
-
-                // Mulai Timer, Anti-Cheating, dan Fullscreen
-                startTimer();
-                initAntiCheating();
-                
-                // Coba masuk mode fullscreen
-                try {
-                    await document.documentElement.requestFullscreen();
-                } catch (e) {
-                    console.warn("Gagal masuk mode fullscreen:", e);
-                }
-
-                showPage('exam');
-
-            } catch (e) {
-                console.error("Gagal memulai ujian:", e);
-                showCustomAlert("Gagal memulai ujian. Coba lagi.");
-            }
-        }
-
-        /**
-         * Memuat PDF berdasarkan kelas siswa
-         */
-        async function loadExamPDF(studentClass) {
-            // Update header info
-            document.getElementById('student-name-header').textContent = localState.name;
-            document.getElementById('student-class-header').textContent = localState.class;
-            
-            try {
-                const docSnap = await getDoc(configRef);
-                if (docSnap.exists() && docSnap.data().pdfLinks) {
-                    const pdfLinks = docSnap.data().pdfLinks;
-                    const pdfUrl = pdfLinks[studentClass] || pdfLinks['X']; // Default ke X jika kelas tidak ditemukan
-                    
-                    if (pdfUrl) {
-                        const container = document.getElementById('pdf-container');
-                        container.innerHTML = `<iframe src="${pdfUrl}"></iframe>`;
-                    } else {
-                        document.getElementById('pdf-container').innerHTML = `<p class="p-10 text-center text-red-500">Link PDF untuk kelas ${studentClass} belum diatur oleh Panitia.</p>`;
-                    }
-                } else {
-                    document.getElementById('pdf-container').innerHTML = `<p class="p-10 text-center text-red-500">Pengaturan ujian belum ditemukan.</p>`;
-                }
-            } catch (e) {
-                console.error("Gagal memuat PDF: ", e);
-            }
-        }
-
-        /**
-         * Memulai timer hitung mundur
-         */
-        function startTimer() {
-            const timerDisplay = document.getElementById('timer-display');
-            
-            if (localState.timerInterval) {
-                clearInterval(localState.timerInterval);
-            }
-
-            function updateTimer() {
-                const now = Date.now();
-                const remaining = localState.examEndTime - now;
-
-                if (remaining <= 0) {
-                    clearInterval(localState.timerInterval);
-                    timerDisplay.textContent = "00:00";
-                    showPage('timeout');
-                    lockExam(false); // Kunci tapi bukan karena cheating
-                    
-                    // Coba keluar dari fullscreen
-                    if (document.fullscreenElement) {
-                        document.exitFullscreen();
-                    }
-                } else {
-                    const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
-                    const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
-                    timerDisplay.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-                }
-            }
-
-            updateTimer(); // Panggil sekali saat mulai
-            localState.timerInterval = setInterval(updateTimer, 1000);
-        }
-
-        /**
-         * Mengaktifkan fitur anti-cheating
-         */
-        function initAntiCheating() {
-            // 1. Deteksi pindah tab/jendela
-            document.addEventListener('visibilitychange', () => {
-                if (document.hidden && !localState.isLocked && localState.examEndTime > Date.now()) {
-                    localState.cheatCount++;
-                    sessionStorage.setItem('cheatCount', localState.cheatCount.toString());
-                    
-                    // Update ke Firestore
-                    const studentDocRef = doc(db, 'artifacts', appId, 'public/data/students', localState.studentDocId);
-                    updateDoc(studentDocRef, { cheatCount: localState.cheatCount }).catch(console.error);
-
-                    if (localState.cheatCount === 1) {
-                        showCustomAlert("PERINGATAN 1!\nJangan berpindah jendela selama ujian berlangsung!");
-                    } else if (localState.cheatCount >= 2) {
-                        showCustomAlert("PERINGATAN AKHIR!\nUjian Anda dibatalkan karena pelanggaran aturan.");
-                        lockExam(true);
+                    } catch (authError) {
+                        console.error("Auth Error:", authError);
+                        showPage('loader'); // Tetap di loader jika auth gagal
                     }
                 }
             });
 
-            // 2. Nonaktifkan klik kanan
-            document.addEventListener('contextmenu', e => e.preventDefault());
-
-            // 3. Nonaktifkan shortcut keyboard
-            document.addEventListener('keydown', e => {
-                if (e.key === 'F12' || 
-                    (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) || 
-                    (e.ctrlKey && e.key === 'U') ||
-                    (e.ctrlKey && e.key === 'C') ||
-                    (e.ctrlKey && e.key === 'P')
-                   ) {
-                    e.preventDefault();
-                }
-            });
+        } catch (e) {
+            console.error("Firebase Init Error:", e);
+            showCustomAlert("Gagal inisialisasi Firebase. Periksa konfigurasi.");
         }
-        
-        /**
-         * Mengunci ujian (karena cheat atau waktu habis)
-         */
-        function lockExam(isCheating) {
-            if (localState.isLocked) return; // Sudah terkunci
-            
-            localState.isLocked = true;
-            sessionStorage.setItem('isLocked', 'true');
-            
-            // Hentikan timer
-            if (localState.timerInterval) {
-                clearInterval(localState.timerInterval);
-            }
-            
-            // Keluar dari fullscreen
-            if (document.fullscreenElement) {
-                document.exitFullscreen();
-            }
-
-            // Update status di Firestore
-            const studentDocRef = doc(db, 'artifacts', appId, 'public/data/students', localState.studentDocId);
-            
-            if (isCheating) {
-                showPage('locked');
-                updateDoc(studentDocRef, { status: 'cheated' }).catch(console.error);
-            } else {
-                // Waktu habis
-                showPage('timeout');
-                updateDoc(studentDocRef, { status: 'finished' }).catch(console.error);
-            }
-        }
-
-
-        // --- LOGIKA ADMIN ---
-
-        /**
-         * Menangani login admin
-         */
-        function handleAdminLogin(e) {
-            e.preventDefault();
-            const username = document.getElementById('admin-username').value;
-            const password = document.getElementById('admin-password').value;
-            const errorMsg = document.getElementById('admin-login-error');
-
-            // Kredensial di-hardcode di sisi klien (sesuai permintaan, tapi TIDAK AMAN untuk produksi nyata)
-            if (username === 'admin ujian' && password === 'smadalawang20517826') {
-                sessionStorage.setItem('isAdmin', 'true');
+    }
+    
+    /**
+     * Mengatur halaman mana yang tampil saat memuat
+     */
+    function handleRouting() {
+        // Cek jika hash adalah #admin
+        if (window.location.hash === '#admin') {
+            if (sessionStorage.getItem('isAdmin') === 'true') {
                 showPage('adminPanel');
                 loadAdminData();
             } else {
-                errorMsg.classList.remove('hidden');
+                showPage('adminLogin');
             }
+        } else {
+            // Cek sesi siswa
+            checkStudentSession();
+        }
+        // Sembunyikan loader utama
+        pages.loader.classList.add('hidden');
+    }
+    
+    /**
+     * Memeriksa sessionStorage untuk melanjutkan sesi siswa
+     */
+    function checkStudentSession() {
+        localState.name = sessionStorage.getItem('studentName');
+        localState.class = sessionStorage.getItem('studentClass');
+        localState.studentDocId = sessionStorage.getItem('studentDocId');
+        localState.cheatCount = parseInt(sessionStorage.getItem('cheatCount') || '0', 10);
+        localState.isLocked = sessionStorage.getItem('isLocked') === 'true';
+        localState.examEndTime = sessionStorage.getItem('examEndTime');
+
+        if (localState.isLocked) {
+            showPage('locked');
+            return;
         }
 
-        /**
-         * Memuat data untuk panel admin (onSnapshot)
-         */
-        function loadAdminData() {
-            // 1. Listen ke konfigurasi
-            onSnapshot(configRef, (doc) => {
-                if (doc.exists()) {
-                    const config = doc.data();
-                    document.getElementById('config-duration').value = config.duration || 90;
-                    
-                    if (config.pdfLinks) {
-                        document.getElementById('config-pdf-x').value = config.pdfLinks['X'] || '';
-                        document.getElementById('config-pdf-xi').value = config.pdfLinks['XI'] || '';
-                        document.getElementById('config-pdf-xii-ibb').value = config.pdfLinks['XII IBB'] || '';
-                        document.getElementById('config-pdf-xii-iis').value = config.pdfLinks['XII IIS'] || '';
-                    }
-                    
-                    const statusDisplay = document.getElementById('exam-status-display');
-                    if (config.examStarted) {
-                        statusDisplay.textContent = "SEDANG BERLANGSUNG";
-                        statusDisplay.classList.add('text-green-600');
-                        statusDisplay.classList.remove('text-red-600');
-                    } else {
-                        statusDisplay.textContent = "BELUM DIMULAI";
-                        statusDisplay.classList.add('text-red-600');
-                        statusDisplay.classList.remove('text-green-600');
-                    }
-                }
-            }, (error) => console.error("Error loading config:", error));
+        if (localState.examEndTime) {
+            const endTime = parseInt(localState.examEndTime, 10);
+            if (Date.now() > endTime) {
+                showPage('timeout');
+            } else {
+                // Lanjutkan ujian
+                startTimer();
+                initAntiCheating();
+                loadExamPDF(localState.class); // Memuat PDF lagi
+                showPage('exam');
+            }
+            return;
+        }
 
-            // 2. Listen ke daftar siswa
-            onSnapshot(studentsCollectionRef, (snapshot) => {
-                const studentList = document.getElementById('student-list');
-                const cheatList = document.getElementById('cheat-list');
-                
-                studentList.innerHTML = '';
-                cheatList.innerHTML = '';
-                
-                let studentCount = 0;
-                let cheatCount = 0;
+        if (localState.name && localState.class && localState.studentDocId) {
+            // Siswa sudah login, arahkan ke halaman tunggu
+            document.getElementById('wait-student-name').textContent = localState.name;
+            showPage('waiting');
+            listenForExamStart();
+        } else {
+            // Siswa belum login
+            showPage('login');
+        }
+    }
 
-                snapshot.docs.forEach(doc => {
-                    const student = doc.data();
-                    studentCount++;
-                    
-                    const li = document.createElement('li');
-                    li.className = 'flex justify-between items-center p-2 bg-gray-50 rounded';
-                    li.innerHTML = `
-                        <span>
-                            <strong class="text-gray-900">${student.name}</strong>
-                            <span class="text-gray-600">(${student.class})</span>
-                        </span>
-                        <span class="text-xs font-medium px-2 py-0.5 rounded ${
-                            student.status === 'started' ? 'bg-green-100 text-green-800' :
-                            student.status === 'waiting' ? 'bg-yellow-100 text-yellow-800' :
-                            student.status === 'cheated' ? 'bg-red-100 text-red-800' :
-                            'bg-blue-100 text-blue-800'
-                        }">${student.status}</span>
-                    `;
-                    studentList.appendChild(li);
+    // --- LOGIKA SISWA ---
 
-                    if (student.cheatCount > 0 || student.status === 'cheated') {
-                        cheatCount++;
-                        const cheatLi = document.createElement('li');
-                        cheatLi.className = 'flex justify-between items-center p-2 bg-red-50 rounded';
-                        cheatLi.innerHTML = `
-                            <span>
-                                <strong class="text-red-900">${student.name}</strong>
-                                <span class="text-gray-600">(${student.class})</span>
-                            </span>
-                            <span class="font-bold text-red-700">${student.cheatCount}x Pelanggaran</span>
-                        `;
-                        cheatList.appendChild(cheatLi);
-                    }
+    /**
+     * Menangani login siswa
+     */
+    async function handleStudentLogin(e) {
+        e.preventDefault();
+        const name = document.getElementById('student-name').value.trim();
+        const sClass = document.getElementById('student-class').value;
+
+        if (name && sClass) {
+            localState.name = name;
+            localState.class = sClass;
+
+            try {
+                // Simpan data siswa ke Firestore (collection: students)
+                const studentDoc = await addDoc(studentsCollectionRef, {
+                    name: name,
+                    class: sClass,
+                    status: 'waiting', // waiting, started, finished, cheated
+                    cheatCount: 0,
+                    loginTime: serverTimestamp()
                 });
-
-                document.getElementById('student-count').textContent = studentCount;
-                document.getElementById('cheat-count').textContent = cheatCount;
-
-            }, (error) => console.error("Error loading students:", error));
-        }
-
-        /**
-         * Menyimpan konfigurasi ujian (PDF, durasi)
-         */
-        async function handleSaveConfig(e) {
-            e.preventDefault();
-            const duration = parseInt(document.getElementById('config-duration').value, 10);
-            const pdfLinks = {
-                'X': document.getElementById('config-pdf-x').value,
-                'XI': document.getElementById('config-pdf-xi').value,
-                'XII IBB': document.getElementById('config-pdf-xii-ibb').value,
-                'XII IIS': document.getElementById('config-pdf-xii-iis').value,
-            };
-
-            try {
-                // setDoc dengan { merge: true } akan membuat dokumen jika tidak ada, atau memperbaruinya
-                await setDoc(configRef, {
-                    duration: duration,
-                    pdfLinks: pdfLinks
-                }, { merge: true });
                 
-                const status = document.getElementById('config-save-status');
-                status.textContent = 'Pengaturan berhasil disimpan!';
-                setTimeout(() => status.textContent = '', 3000);
+                localState.studentDocId = studentDoc.id;
+
+                // Simpan di sessionStorage
+                sessionStorage.setItem('studentName', name);
+                sessionStorage.setItem('studentClass', sClass);
+                sessionStorage.setItem('studentDocId', studentDoc.id);
+                sessionStorage.setItem('cheatCount', '0');
+                sessionStorage.setItem('isLocked', 'false');
+
+                // Update UI & pindah halaman
+                document.getElementById('wait-student-name').textContent = name;
+                showPage('waiting');
+                listenForExamStart();
 
             } catch (e) {
-                console.error("Error saving config: ", e);
-                const status = document.getElementById('config-save-status');
-                status.textContent = 'Gagal menyimpan. Cek konsol.';
-                status.classList.add('text-red-600');
+                console.error("Error adding student document: ", e);
+                showCustomAlert("Gagal menyimpan data siswa. Coba lagi.");
             }
         }
+    }
 
-        /**
-         * Admin menekan tombol "Mulai Ujian"
-         */
-        async function adminStartExam() {
+    /**
+     * Mendengarkan (onSnapshot) perubahan status ujian dari admin
+     */
+    function listenForExamStart() {
+        const startBtn = document.getElementById('start-exam-btn');
+        const startBtnText = document.getElementById('start-btn-text');
+        
+        onSnapshot(configRef, (docSnap) => {
+            if (docSnap.exists()) {
+                const config = docSnap.data();
+                if (config.examStarted === true) {
+                    startBtn.disabled = false;
+                    startBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
+                    startBtn.classList.add('bg-green-600', 'hover:bg-green-700', 'animate-pulse');
+                    startBtnText.textContent = "MULAI SEKARANG";
+                } else {
+                    startBtn.disabled = true;
+                    startBtn.classList.add('bg-gray-400', 'cursor-not-allowed');
+                    startBtn.classList.remove('bg-green-600', 'hover:bg-green-700', 'animate-pulse');
+                    startBtnText.textContent = "Ujian Belum Dimulai";
+                }
+            } else {
+                // Dokumen config belum dibuat oleh admin
+                startBtnText.textContent = "Menunggu Pengaturan dari Panitia";
+            }
+        }, (error) => {
+            console.error("Error listening to exam start: ", error);
+        });
+    }
+    
+    /**
+     * Memulai ujian (saat siswa klik 'Mulai Sekarang')
+     */
+    async function startExam() {
+        if (localState.isLocked) {
+            showPage('locked');
+            return;
+        }
+
+        try {
+            // Ambil durasi dari Firestore
+            const docSnap = await getDoc(configRef);
+            let duration = 90; // Default
+            if (docSnap.exists() && docSnap.data().duration) {
+                duration = parseInt(docSnap.data().duration, 10);
+            }
+
+            // Set waktu berakhir
+            const now = Date.now();
+            const endTime = now + duration * 60 * 1000;
+            localState.examEndTime = endTime;
+            sessionStorage.setItem('examEndTime', endTime.toString());
+
+            // Update status siswa di Firestore (students/{docId})
+            const studentDocRef = doc(db, 'students', localState.studentDocId);
+            await updateDoc(studentDocRef, { status: 'started' });
+
+            // Muat PDF
+            loadExamPDF(localState.class);
+
+            // Mulai Timer, Anti-Cheating, dan Fullscreen
+            startTimer();
+            initAntiCheating();
+            
+            // Coba masuk mode fullscreen
             try {
-                await setDoc(configRef, { examStarted: true }, { merge: true });
+                await document.documentElement.requestFullscreen();
             } catch (e) {
-                console.error("Error starting exam: ", e);
+                console.warn("Gagal masuk mode fullscreen:", e);
+            }
+
+            showPage('exam');
+
+        } catch (e) {
+            console.error("Gagal memulai ujian:", e);
+            showCustomAlert("Gagal memulai ujian. Coba lagi.");
+        }
+    }
+
+    /**
+     * Memuat PDF berdasarkan kelas siswa
+     */
+    async function loadExamPDF(studentClass) {
+        // Update header info
+        document.getElementById('student-name-header').textContent = localState.name;
+        document.getElementById('student-class-header').textContent = localState.class;
+        
+        try {
+            const docSnap = await getDoc(configRef);
+            if (docSnap.exists() && docSnap.data().pdfLinks) {
+                const pdfLinks = docSnap.data().pdfLinks;
+                const pdfUrl = pdfLinks[studentClass] || pdfLinks['X']; // Default ke X jika kelas tidak ditemukan
+                
+                if (pdfUrl) {
+                    const container = document.getElementById('pdf-container');
+                    container.innerHTML = `<iframe src="${pdfUrl}"></iframe>`;
+                } else {
+                    document.getElementById('pdf-container').innerHTML = `<p class="p-10 text-center text-red-500">Link PDF untuk kelas ${studentClass} belum diatur oleh Panitia.</p>`;
+                }
+            } else {
+                document.getElementById('pdf-container').innerHTML = `<p class="p-10 text-center text-red-500">Pengaturan ujian belum ditemukan.</p>`;
+            }
+        } catch (e) {
+            console.error("Gagal memuat PDF: ", e);
+        }
+    }
+
+    /**
+     * Memulai timer hitung mundur
+     */
+    function startTimer() {
+        const timerDisplay = document.getElementById('timer-display');
+        
+        if (localState.timerInterval) {
+            clearInterval(localState.timerInterval);
+        }
+
+        function updateTimer() {
+            const now = Date.now();
+            const remaining = localState.examEndTime - now;
+
+            if (remaining <= 0) {
+                clearInterval(localState.timerInterval);
+                timerDisplay.textContent = "00:00";
+                showPage('timeout');
+                lockExam(false); // Kunci tapi bukan karena cheating
+                
+                // Coba keluar dari fullscreen
+                if (document.fullscreenElement) {
+                    document.exitFullscreen();
+                }
+            } else {
+                const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
+                timerDisplay.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
             }
         }
 
-        /**
-         * Admin menekan tombol "Reset Ujian"
-         */
-        async function adminResetExam() {
-            if (confirm("Anda yakin ingin MERESET status ujian? Ini akan mengunci tombol 'Mulai' di sisi siswa.")) {
-                try {
-                    await setDoc(configRef, { examStarted: false }, { merge: true });
-                    // Pertimbangkan untuk menghapus koleksi siswa di sini jika perlu
-                    // Untuk saat ini, hanya mereset status mulai
-                } catch (e) {
-                    console.error("Error resetting exam: ", e);
+        updateTimer(); // Panggil sekali saat mulai
+        localState.timerInterval = setInterval(updateTimer, 1000);
+    }
+
+    /**
+     * Mengaktifkan fitur anti-cheating
+     */
+    function initAntiCheating() {
+        // 1. Deteksi pindah tab/jendela
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && !localState.isLocked && localState.examEndTime > Date.now()) {
+                localState.cheatCount++;
+                sessionStorage.setItem('cheatCount', localState.cheatCount.toString());
+                
+                // Update ke Firestore (students/{docId})
+                const studentDocRef = doc(db, 'students', localState.studentDocId);
+                updateDoc(studentDocRef, { cheatCount: localState.cheatCount }).catch(console.error);
+
+                if (localState.cheatCount === 1) {
+                    showCustomAlert("PERINGATAN 1!\nJangan berpindah jendela selama ujian berlangsung!");
+                } else if (localState.cheatCount >= 2) {
+                    showCustomAlert("PERINGATAN AKHIR!\nUjian Anda dibatalkan karena pelanggaran aturan.");
+                    lockExam(true);
                 }
             }
-        }
-
-        // --- INISIALISASI DAN EVENT LISTENER ---
-
-        // Panggil inisialisasi Firebase saat DOM dimuat
-        document.addEventListener('DOMContentLoaded', () => {
-            initFirebase();
-
-            // Navigasi Admin/Siswa
-            document.getElementById('admin-link').addEventListener('click', (e) => {
-                e.preventDefault();
-                window.location.hash = '#admin';
-                handleRouting();
-            });
-            document.getElementById('student-link').addEventListener('click', (e) => {
-                e.preventDefault();
-                window.location.hash = '';
-                handleRouting();
-            });
-
-            // Listener Form
-            document.getElementById('login-form').addEventListener('submit', handleStudentLogin);
-            document.getElementById('admin-login-form').addEventListener('submit', handleAdminLogin);
-            document.getElementById('config-form').addEventListener('submit', handleSaveConfig);
-
-            // Listener Tombol
-            document.getElementById('start-exam-btn').addEventListener('click', startExam);
-            document.getElementById('admin-start-exam-btn').addEventListener('click', adminStartExam);
-            document.getElementById('admin-reset-exam-btn').addEventListener('click', adminResetExam);
-            document.getElementById('close-alert-btn').addEventListener('click', () => {
-                document.getElementById('alert-modal').classList.add('hidden');
-            });
         });
 
-    </script>
+        // 2. Nonaktifkan klik kanan
+        document.addEventListener('contextmenu', e => e.preventDefault());
+
+        // 3. Nonaktifkan shortcut keyboard
+        document.addEventListener('keydown', e => {
+            if (e.key === 'F12' || 
+                (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) || 
+                (e.ctrlKey && e.key === 'U') ||
+                (e.ctrlKey && e.key === 'C') ||
+                (e.ctrlKey && e.key === 'P')
+               ) {
+                e.preventDefault();
+            }
+        });
+    }
+    
+    /**
+     * Mengunci ujian (karena cheat atau waktu habis)
+     */
+    function lockExam(isCheating) {
+        if (localState.isLocked) return; // Sudah terkunci
+        
+        localState.isLocked = true;
+        sessionStorage.setItem('isLocked', 'true');
+        
+        // Hentikan timer
+        if (localState.timerInterval) {
+            clearInterval(localState.timerInterval);
+        }
+        
+        // Keluar dari fullscreen
+        if (document.fullscreenElement) {
+            document.exitFullscreen();
+        }
+
+        // Update status di Firestore (students/{docId})
+        const studentDocRef = doc(db, 'students', localState.studentDocId);
+        
+        if (isCheating) {
+            showPage('locked');
+            updateDoc(studentDocRef, { status: 'cheated' }).catch(console.error);
+        } else {
+            // Waktu habis
+            showPage('timeout');
+            updateDoc(studentDocRef, { status: 'finished' }).catch(console.error);
+        }
+    }
+
+
+    // --- LOGIKA ADMIN ---
+
+    /**
+     * Menangani login admin
+     */
+    function handleAdminLogin(e) {
+        e.preventDefault();
+        const username = document.getElementById('admin-username').value;
+        const password = document.getElementById('admin-password').value;
+        const errorMsg = document.getElementById('admin-login-error');
+
+        // Kredensial di-hardcode di sisi klien (sesuai permintaan, tapi TIDAK AMAN untuk produksi nyata)
+        if (username === 'admin ujian' && password === 'smadalawang20517826') {
+            sessionStorage.setItem('isAdmin', 'true');
+            showPage('adminPanel');
+            loadAdminData();
+        } else {
+            errorMsg.classList.remove('hidden');
+        }
+    }
+
+    /**
+     * Memuat data untuk panel admin (onSnapshot)
+     */
+    function loadAdminData() {
+        // 1. Listen ke konfigurasi
+        onSnapshot(configRef, (docSnap) => {
+            if (docSnap.exists()) {
+                const config = docSnap.data();
+                document.getElementById('config-duration').value = config.duration || 90;
+                
+                if (config.pdfLinks) {
+                    document.getElementById('config-pdf-x').value = config.pdfLinks['X'] || '';
+                    document.getElementById('config-pdf-xi').value = config.pdfLinks['XI'] || '';
+                    document.getElementById('config-pdf-xii-ibb').value = config.pdfLinks['XII IBB'] || '';
+                    document.getElementById('config-pdf-xii-iis').value = config.pdfLinks['XII IIS'] || '';
+                }
+                
+                const statusDisplay = document.getElementById('exam-status-display');
+                if (config.examStarted) {
+                    statusDisplay.textContent = "SEDANG BERLANGSUNG";
+                    statusDisplay.classList.add('text-green-600');
+                    statusDisplay.classList.remove('text-red-600');
+                } else {
+                    statusDisplay.textContent = "BELUM DIMULAI";
+                    statusDisplay.classList.add('text-red-600');
+                    statusDisplay.classList.remove('text-green-600');
+                }
+            }
+        }, (error) => console.error("Error loading config:", error));
+
+        // 2. Listen ke daftar siswa
+        onSnapshot(studentsCollectionRef, (snapshot) => {
+            const studentList = document.getElementById('student-list');
+            const cheatList = document.getElementById('cheat-list');
+            
+            studentList.innerHTML = '';
+            cheatList.innerHTML = '';
+            
+            let studentCount = 0;
+            let cheatCount = 0;
+
+            snapshot.docs.forEach(docSnap => {
+                const student = docSnap.data();
+                studentCount++;
+                
+                const li = document.createElement('li');
+                li.className = 'flex justify-between items-center p-2 bg-gray-50 rounded';
+                li.innerHTML = `
+                    <span>
+                        <strong class="text-gray-900">${student.name}</strong>
+                        <span class="text-gray-600">(${student.class})</span>
+                    </span>
+                    <span class="text-xs font-medium px-2 py-0.5 rounded ${
+                        student.status === 'started' ? 'bg-green-100 text-green-800' :
+                        student.status === 'waiting' ? 'bg-yellow-100 text-yellow-800' :
+                        student.status === 'cheated' ? 'bg-red-100 text-red-800' :
+                        'bg-blue-100 text-blue-800'
+                    }">${student.status}</span>
+                `;
+                studentList.appendChild(li);
+
+                if (student.cheatCount > 0 || student.status === 'cheated') {
+                    cheatCount++;
+                    const cheatLi = document.createElement('li');
+                    cheatLi.className = 'flex justify-between items-center p-2 bg-red-50 rounded';
+                    cheatLi.innerHTML = `
+                        <span>
+                            <strong class="text-red-900">${student.name}</strong>
+                            <span class="text-gray-600">(${student.class})</span>
+                        </span>
+                        <span class="font-bold text-red-700">${student.cheatCount}x Pelanggaran</span>
+                    `;
+                    cheatList.appendChild(cheatLi);
+                }
+            });
+
+            document.getElementById('student-count').textContent = studentCount;
+            document.getElementById('cheat-count').textContent = cheatCount;
+
+        }, (error) => console.error("Error loading students:", error));
+    }
+
+    /**
+     * Menyimpan konfigurasi ujian (PDF, durasi)
+     */
+    async function handleSaveConfig(e) {
+        e.preventDefault();
+        const duration = parseInt(document.getElementById('config-duration').value, 10);
+        const pdfLinks = {
+            'X': document.getElementById('config-pdf-x').value,
+            'XI': document.getElementById('config-pdf-xi').value,
+            'XII IBB': document.getElementById('config-pdf-xii-ibb').value,
+            'XII IIS': document.getElementById('config-pdf-xii-iis').value,
+        };
+
+        try {
+            // setDoc dengan { merge: true } akan membuat dokumen jika tidak ada, atau memperbaruinya
+            await setDoc(configRef, {
+                duration: duration,
+                pdfLinks: pdfLinks
+            }, { merge: true });
+            
+            const status = document.getElementById('config-save-status');
+            status.textContent = 'Pengaturan berhasil disimpan!';
+            setTimeout(() => status.textContent = '', 3000);
+
+        } catch (e) {
+            console.error("Error saving config: ", e);
+            const status = document.getElementById('config-save-status');
+            status.textContent = 'Gagal menyimpan. Cek konsol.';
+            status.classList.add('text-red-600');
+        }
+    }
+
+    /**
+     * Admin menekan tombol "Mulai Ujian"
+     */
+    async function adminStartExam() {
+        try {
+            await setDoc(configRef, { examStarted: true }, { merge: true });
+        } catch (e) {
+            console.error("Error starting exam: ", e);
+        }
+    }
+
+    /**
+     * Admin menekan tombol "Reset Ujian"
+     */
+    async function adminResetExam() {
+        if (confirm("Anda yakin ingin MERESET status ujian? Ini akan mengunci tombol 'Mulai' di sisi siswa.")) {
+            try {
+                await setDoc(configRef, { examStarted: false }, { merge: true });
+                // Pertimbangkan untuk menghapus koleksi siswa di sini jika perlu
+                // Untuk saat ini, hanya mereset status mulai
+            } catch (e) {
+                console.error("Error resetting exam: ", e);
+            }
+        }
+    }
+
+    // --- INISIALISASI DAN EVENT LISTENER ---
+
+    // Panggil inisialisasi Firebase saat DOM dimuat
+    document.addEventListener('DOMContentLoaded', () => {
+        initFirebase();
+
+        // Navigasi Admin/Siswa
+        document.getElementById('admin-link').addEventListener('click', (e) => {
+            e.preventDefault();
+            window.location.hash = '#admin';
+            handleRouting();
+        });
+        document.getElementById('student-link').addEventListener('click', (e) => {
+            e.preventDefault();
+            window.location.hash = '';
+            handleRouting();
+        });
+
+        // Listener Form
+        document.getElementById('login-form').addEventListener('submit', handleStudentLogin);
+        document.getElementById('admin-login-form').addEventListener('submit', handleAdminLogin);
+        document.getElementById('config-form').addEventListener('submit', handleSaveConfig);
+
+        // Listener Tombol
+        document.getElementById('start-exam-btn').addEventListener('click', startExam);
+        document.getElementById('admin-start-exam-btn').addEventListener('click', adminStartExam);
+        document.getElementById('admin-reset-exam-btn').addEventListener('click', adminResetExam);
+        document.getElementById('close-alert-btn').addEventListener('click', () => {
+            document.getElementById('alert-modal').classList.add('hidden');
+        });
+    });
+
+</script>
 </body>
 </html>
